@@ -1,15 +1,17 @@
 // Package latlon2h3 converts latitude/longitude coordinates to Uber H3 hexagon
-// indices at resolution 8 and back.
+// indices at resolution 8.
 //
 // H3 is a hexagonal grid system created by Uber for geospatial analysis.
 // Resolution 8 cells have an average area of ~0.74 km², suitable
 // for neighborhood-level spatial aggregation.
 //
+// For full H3 functionality (cell properties, neighbors, reverse lookup, etc.),
+// use the upstream library directly: github.com/uber/h3-go/v4
+//
 // Usage:
 //
-//	h3Index, err := latlon2h3.ToH3(-23.5505, -46.6333) // São Paulo
-//	lat, lon, err := latlon2h3.FromH3("88283080b5fffff")
-//	neighbors, err := latlon2h3.Neighbors("88283080b5fffff")
+//	h3Index, err := latlon2h3.ToH3(-23.5505, -46.6333) // São Paulo, Brazil
+//	h3Index := latlon2h3.MustToH3(40.7128, -74.0060)    // panics on invalid input
 package latlon2h3
 
 import (
@@ -47,11 +49,6 @@ func ToH3AtResolution(lat, lon float64, resolution int) (string, error) {
 	return cell.String(), nil
 }
 
-// validCoord checks latitude in [-90, 90] and longitude in [-180, 180].
-func validCoord(lat, lon float64) bool {
-	return lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180
-}
-
 // MustToH3 is like ToH3 but panics on invalid input.
 // Use only when coordinates are guaranteed valid.
 func MustToH3(lat, lon float64) string {
@@ -62,58 +59,12 @@ func MustToH3(lat, lon float64) string {
 	return h
 }
 
-// FromH3 converts an H3 index string back to the center latitude/longitude
-// of the corresponding hexagon.
-//
-// The H3 string must be a valid 64-bit hex representation (e.g., "88283080b5fffff").
-func FromH3(h3Index string) (lat, lon float64, err error) {
-	cell := h3.Cell(h3.IndexFromString(h3Index))
-	if !cell.IsValid() {
-		return 0, 0, fmt.Errorf("latlon2h3: invalid H3 index %q", h3Index)
-	}
-
-	geo, err := cell.LatLng()
-	if err != nil {
-		return 0, 0, fmt.Errorf("latlon2h3: %w", err)
-	}
-
-	return geo.Lat, geo.Lng, nil
-}
-
-// Resolution extracts the resolution level from an H3 index string.
-func Resolution(h3Index string) (int, error) {
-	cell := h3.Cell(h3.IndexFromString(h3Index))
-	if !cell.IsValid() {
-		return 0, fmt.Errorf("latlon2h3: invalid H3 index %q", h3Index)
-	}
-	return cell.Resolution(), nil
-}
-
 // IsValidLatLon checks whether the given latitude/longitude pair is valid.
 func IsValidLatLon(lat, lon float64) bool {
 	return validCoord(lat, lon)
 }
 
-// Neighbors returns the H3 indices of the six (or five for pentagons)
-// neighboring cells at the same resolution.
-func Neighbors(h3Index string) ([]string, error) {
-	cell := h3.Cell(h3.IndexFromString(h3Index))
-	if !cell.IsValid() {
-		return nil, fmt.Errorf("latlon2h3: invalid H3 index %q", h3Index)
-	}
-
-	ring, err := cell.GridDisk(1)
-	if err != nil {
-		return nil, fmt.Errorf("latlon2h3: %w", err)
-	}
-
-	// GridDisk returns origin + ring; skip the origin.
-	neighbors := make([]string, 0, len(ring)-1)
-	for _, c := range ring {
-		if c == cell {
-			continue
-		}
-		neighbors = append(neighbors, c.String())
-	}
-	return neighbors, nil
+// validCoord checks latitude in [-90, 90] and longitude in [-180, 180].
+func validCoord(lat, lon float64) bool {
+	return lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180
 }

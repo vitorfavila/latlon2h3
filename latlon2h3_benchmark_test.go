@@ -38,14 +38,3 @@ func BenchmarkToH3_Parallel(b *testing.B) {
 		}
 	})
 }
-
-// BenchmarkRoundtrip measures ToH3 + FromH3 combined latency.
-func BenchmarkRoundtrip(b *testing.B) {
-	rng := rand.New(rand.NewSource(42))
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		lat, lon := randomCoord(rng)
-		h, _ := latlon2h3.ToH3(lat, lon)
-		_, _, _ = latlon2h3.FromH3(h)
-	}
-}

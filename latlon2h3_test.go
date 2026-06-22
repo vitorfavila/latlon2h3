@@ -11,8 +11,6 @@ func TestToH3_ValidCoords(t *testing.T) {
 	tests := []struct {
 		name     string
 		lat, lon float64
-		// We don't assert exact cell strings — they could change across H3 versions.
-		// Instead we verify the output is a valid H3 string and consistent.
 	}{
 		{name: "São Paulo", lat: -23.5505, lon: -46.6333},
 		{name: "New York", lat: 40.7128, lon: -74.0060},
@@ -35,27 +33,13 @@ func TestToH3_ValidCoords(t *testing.T) {
 			if h3Index == "" {
 				t.Fatal("expected non-empty H3 index")
 			}
+
+			// Resolution 8 H3 indices are always 15 hex chars.
 			if len(h3Index) != 15 {
 				t.Errorf("expected 15-char H3 string at res 8, got %q (%d chars)", h3Index, len(h3Index))
 			}
 
-			// Verify resolution is 8.
-			res, err := latlon2h3.Resolution(h3Index)
-			if err != nil {
-				t.Fatalf("Resolution() error: %v", err)
-			}
-			if res != 8 {
-				t.Errorf("expected resolution 8, got %d", res)
-			}
-
-			// Roundtrip: lat/lon should be close.
-			rlat, rlon, err := latlon2h3.FromH3(h3Index)
-			if err != nil {
-				t.Fatalf("FromH3() error: %v", err)
-			}
-			// The cell center should be within a reasonable distance.
-			// H3 res 8 cells average ~0.74 km²; center should be close to input.
-			t.Logf("%s: input=(%.4f, %.4f) → h3=%s → center=(%.4f, %.4f)", tt.name, tt.lat, tt.lon, h3Index, rlat, rlon)
+			t.Logf("%s: (%.4f, %.4f) → %s", tt.name, tt.lat, tt.lon, h3Index)
 		})
 	}
 }
@@ -82,90 +66,35 @@ func TestToH3_InvalidCoords(t *testing.T) {
 	}
 }
 
-func TestRoundtrip(t *testing.T) {
-	lat, lon := -23.5505, -46.6333 // São Paulo
-
-	h3Index, err := latlon2h3.ToH3(lat, lon)
+func TestToH3AtResolution(t *testing.T) {
+	// Same coords should produce different cells at different resolutions.
+	res6, err := latlon2h3.ToH3AtResolution(-23.5505, -46.6333, 6)
 	if err != nil {
-		t.Fatalf("ToH3: %v", err)
+		t.Fatalf("res 6: %v", err)
 	}
-
-	rlat, rlon, err := latlon2h3.FromH3(h3Index)
+	res8, err := latlon2h3.ToH3AtResolution(-23.5505, -46.6333, 8)
 	if err != nil {
-		t.Fatalf("FromH3: %v", err)
+		t.Fatalf("res 8: %v", err)
 	}
-
-	// Convert the center back to H3 — it should give the same cell.
-	sameIndex, err := latlon2h3.ToH3(rlat, rlon)
-	if err != nil {
-		t.Fatalf("ToH3(roundtrip): %v", err)
-	}
-	if sameIndex != h3Index {
-		t.Errorf("roundtrip mismatch: original=%s center_to_h3=%s", h3Index, sameIndex)
-	}
-}
-
-func TestFromH3_Invalid(t *testing.T) {
-	tests := []struct {
-		name string
-		h3   string
-	}{
-		{name: "empty string", h3: ""},
-		{name: "garbage", h3: "not-an-h3-index"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			_, _, err := latlon2h3.FromH3(tt.h3)
-			if err == nil {
-				t.Fatal("expected error for invalid H3, got nil")
-			}
-		})
-	}
-}
-
-func TestNeighbors(t *testing.T) {
-	// Use São Paulo as a stable test point.
-	h3Index, err := latlon2h3.ToH3(-23.5505, -46.6333)
-	if err != nil {
-		t.Fatalf("ToH3: %v", err)
-	}
-
-	neighbors, err := latlon2h3.Neighbors(h3Index)
-	if err != nil {
-		t.Fatalf("Neighbors: %v", err)
-	}
-
-	// A valid H3 cell at resolution 8 always has 6 neighbors
-	// (pentagons at res 0 have 5, but those don't exist at res 8).
-	if len(neighbors) != 6 {
-		t.Errorf("expected 6 neighbors, got %d", len(neighbors))
-	}
-
-	for _, n := range neighbors {
-		if n == "" {
-			t.Error("neighbor is empty string")
-		}
-		if n == h3Index {
-			t.Error("neighbor equals origin cell")
-		}
+	if res6 == res8 {
+		t.Errorf("cells at different resolutions should differ, got same: %s", res6)
 	}
 }
 
 func TestIsValidLatLon(t *testing.T) {
-	if latlon2h3.IsValidLatLon(0, 0) != true {
+	if !latlon2h3.IsValidLatLon(0, 0) {
 		t.Error("0,0 should be valid")
 	}
-	if latlon2h3.IsValidLatLon(90, 180) != true {
+	if !latlon2h3.IsValidLatLon(90, 180) {
 		t.Error("90,180 should be valid")
 	}
-	if latlon2h3.IsValidLatLon(-90, -180) != true {
+	if !latlon2h3.IsValidLatLon(-90, -180) {
 		t.Error("-90,-180 should be valid")
 	}
-	if latlon2h3.IsValidLatLon(90.1, 0) != false {
+	if latlon2h3.IsValidLatLon(90.1, 0) {
 		t.Error("90.1,0 should be invalid")
 	}
-	if latlon2h3.IsValidLatLon(0, 180.1) != false {
+	if latlon2h3.IsValidLatLon(0, 180.1) {
 		t.Error("0,180.1 should be invalid")
 	}
 }
@@ -176,7 +105,7 @@ func TestMustToH3_PanicsOnInvalid(t *testing.T) {
 			t.Error("MustToH3 should panic on invalid coords")
 		}
 	}()
-	latlon2h3.MustToH3(91, 0) // should panic
+	latlon2h3.MustToH3(91, 0)
 }
 
 func TestMustToH3_Valid(t *testing.T) {
