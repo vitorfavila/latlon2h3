@@ -6,13 +6,75 @@ Resolution 8 cells average ~0.74 km² — great for neighborhood-level spatial a
 
 For full H3 functionality (cell properties, neighbors, reverse lookup), use [uber/h3-go](https://github.com/uber/h3-go) directly.
 
+## Prerequisites
+
+This library depends on the H3 C library via CGo. You need `libh3` installed in your build environment.
+
+### macOS
+
+```bash
+brew install h3
+```
+
+### Linux (Debian/Ubuntu)
+
+```bash
+sudo apt-get install libh3-dev
+```
+
+### Docker
+
+If you prefer not to install native dependencies, use the included Docker image:
+
+```bash
+# Build the image
+docker build -t latlon2h3 .
+
+# Run tests
+docker run --rm -v "$PWD":/src latlon2h3 go test -v -race ./...
+
+# Run benchmarks
+docker run --rm -v "$PWD":/src latlon2h3 \
+    go test -bench='BenchmarkToH3$' -benchtime=100000x -benchmem ./...
+```
+
+### Docker for apps importing this library
+
+For apps that import `latlon2h3` (or `uber/h3-go` directly), use a multi-stage build:
+
+```dockerfile
+# ---- build stage ----
+FROM golang:1.22-bookworm AS build
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libh3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=1 go build -o /bin/app ./cmd/app
+
+# ---- runtime stage ----
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libh3-4 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=build /bin/app /usr/local/bin/app
+ENTRYPOINT ["/usr/local/bin/app"]
+```
+
+Key points:
+- Build stage needs `libh3-dev` (headers + shared lib)
+- Runtime stage only needs `libh3-4` (shared lib only, no headers)
+- `CGO_ENABLED=1` must be set explicitly (some Go images default to 0)
+
 ## Installation
 
 ```bash
-# System dependency (macOS)
-brew install h3
-
-# Go module
 go get github.com/vitoravila/latlon2h3
 ```
 
